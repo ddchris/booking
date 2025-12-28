@@ -1,69 +1,90 @@
 <template>
-  <div class="space-y-6">
-    <h1 class="text-2xl font-bold text-white">客戶清單管理</h1>
+  <div class="space-y-2">
+    <div class="flex items-center justify-between gap-2 pt-2 px-4">
+      <h1 class="text-lg md:text-xl font-bold text-gray-900 dark:text-white whitespace-nowrap">客戶清單管理</h1>
+      <NuxtLink to="/admin/bookings" class="text-xs md:text-sm text-amber-500 hover:text-amber-400 whitespace-nowrap">
+        ← 返回後台管理
+      </NuxtLink>
+    </div>
 
-    <!-- Toolbar -->
-    <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 flex gap-4">
+    <!-- Search Bar -->
+    <div class="bg-white dark:bg-gray-800 p-2 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-300">
       <input 
         v-model="search"
         type="text" 
         placeholder="搜尋姓名或電話..." 
-        class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+        class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-amber-500 focus:border-amber-500 block py-1 px-2 md:p-2 transition-colors duration-300 h-7 md:h-auto"
       >
     </div>
 
-    <!-- List -->
-    <div class="space-y-4">
-      <div v-for="user in filteredUsers" :key="user.uid" class="bg-gray-800 p-4 rounded-xl border border-gray-700">
-        <div class="flex justify-between items-start">
-          <div class="flex items-center gap-3">
-             <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-lg font-bold text-amber-500">
-               {{ user.displayName?.[0] || '?' }}
-             </div>
-             <div>
-               <div class="font-bold text-white flex items-center gap-2">
-                 {{ user.displayName }}
-                 <span v-if="user.isBlocked" class="text-xs bg-red-500 text-white px-1.5 rounded">黑名單</span>
-               </div>
-               <div class="text-sm text-gray-400">
-                 {{ user.phoneNumber || '無電話' }} | LINE: {{ user.lineId || '--' }}
-               </div>
-             </div>
+    <!-- Customer List -->
+    <div class="space-y-3">
+      <el-descriptions
+        v-for="user in filteredUsers"
+        :key="user.uid"
+        direction="vertical"
+        :column="2"
+        border
+        size="small"
+        class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden"
+      >
+        <!-- User Info -->
+        <el-descriptions-item label="客戶資訊">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-sm font-bold text-amber-600 dark:text-amber-500">
+              {{ user.displayName?.[0] || '?' }}
+            </div>
+            <div>
+              <div class="font-medium text-amber-600 dark:text-amber-500">
+                {{ user.displayName }}
+                <span v-if="user.isBlocked" class="ml-1 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded">黑名單</span>
+              </div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ user.phoneNumber || '無電話' }}</div>
+            </div>
           </div>
-          
-          <div class="text-right text-xs text-gray-500 space-y-1">
-             <div>總預約: <span class="text-amber-500 font-bold text-sm">{{ user.totalBookings || 0 }}</span> 次</div>
-             <div v-if="user.lastBookingAt">
-               最近: {{ formatDate(user.lastBookingAt.toMillis()) }}
-             </div>
+        </el-descriptions-item>
+
+        <!-- LINE ID -->
+        <el-descriptions-item label="LINE ID">
+          <div class="text-sm">{{ user.lineId || '--' }}</div>
+        </el-descriptions-item>
+
+        <!-- Total Bookings -->
+        <el-descriptions-item label="總預約次數">
+          <div class="text-amber-600 dark:text-amber-500 font-bold">{{ user.totalBookings || 0 }} 次</div>
+        </el-descriptions-item>
+
+        <!-- Last Booking -->
+        <el-descriptions-item label="最近預約">
+          <div class="text-sm text-gray-600 dark:text-gray-400">
+            {{ user.lastBookingAt ? formatDate(user.lastBookingAt.toMillis()) : '無記錄' }}
           </div>
-        </div>
-        
+        </el-descriptions-item>
+
+        <!-- Admin Note -->
+        <el-descriptions-item label="管理員備註" :span="2">
+          <input 
+            v-model="user.tempNote"
+            @change="updateNote(user)"
+            type="text"
+            placeholder="管理員備註..."
+            class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs text-gray-900 dark:text-gray-300 focus:outline-none focus:border-amber-500"
+          >
+        </el-descriptions-item>
+
         <!-- Actions -->
-        <div class="mt-4 pt-4 border-t border-gray-700/50 flex flex-col gap-3">
-           <!-- Note -->
-           <div class="flex gap-2">
-             <input 
-               v-model="user.tempNote"
-               @change="updateNote(user)"
-               type="text"
-               placeholder="管理員備註..."
-               class="flex-1 bg-gray-900/50 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-gray-500"
-             >
-           </div>
-           
-           <!-- Buttons -->
-           <div class="flex justify-end gap-2">
-             <button 
-               @click="toggleBlock(user)"
-               class="text-xs px-3 py-1.5 rounded border transition"
-               :class="user.isBlocked ? 'border-gray-500 text-gray-400 hover:bg-gray-700' : 'border-red-500/50 text-red-400 hover:bg-red-500/10'"
-             >
-               {{ user.isBlocked ? '解除黑名單' : '設為黑名單' }}
-             </button>
-           </div>
-        </div>
-      </div>
+        <el-descriptions-item label="操作" :span="2">
+          <div class="flex justify-end">
+            <el-button 
+              @click="toggleBlock(user)"
+              :type="user.isBlocked ? 'info' : 'danger'"
+              size="small"
+            >
+              {{ user.isBlocked ? '解除黑名單' : '設為黑名單' }}
+            </el-button>
+          </div>
+        </el-descriptions-item>
+      </el-descriptions>
     </div>
   </div>
 </template>

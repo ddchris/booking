@@ -37,28 +37,38 @@ vi.mock('firebase/firestore', () => ({
   }
 }))
 
-describe('Auth Store', () => {
+describe('身分驗證 Store (Auth Store)', () => {
   let store: ReturnType<typeof useAuthStore>
 
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.stubGlobal('useNuxtApp', () => ({ $auth: mockAuth, $db: mockDb }))
+
+    // 模擬 localStorage
+    const mockStorage: Record<string, string> = {}
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn(key => mockStorage[key] || null),
+      setItem: vi.fn((key, value) => { mockStorage[key] = value }),
+      removeItem: vi.fn(key => { delete mockStorage[key] }),
+      clear: vi.fn(() => { for (const key in mockStorage) delete mockStorage[key] })
+    })
+
     store = useAuthStore()
   })
 
-  it('should initialize with loading state', () => {
+  it('初始化時應具有載入狀態', () => {
     expect(store.loading).toBe(true)
     expect(store.user).toBeNull()
   })
 
-  it('should update state on auth change', async () => {
+  it('應在身分驗證變更時更新狀態', async () => {
     const mockUser = { uid: '123', displayName: 'Test' }
 
-    // Simulate auth init call
+    // 模擬 auth 初始化調用
     const initPromise = store.initAuth()
 
-    // Simulate callback execution
+    // 模擬回呼執行
     mockOnAuthStateChanged(mockUser)
 
     await initPromise
@@ -67,7 +77,7 @@ describe('Auth Store', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('subscribeToProfile should fetch user data', async () => {
+  it('subscribeToProfile 應獲取使用者資料', async () => {
     const mockUser = { uid: '123' }
     const mockProfile = { uid: '123', role: 'admin', isBlocked: false }
 
@@ -75,7 +85,7 @@ describe('Auth Store', () => {
 
     mockOnAuthStateChanged(mockUser)
 
-    // onSnapshot callback
+    // onSnapshot 回呼
     mockOnSnapshot({
       exists: () => true,
       data: () => mockProfile
@@ -85,18 +95,18 @@ describe('Auth Store', () => {
     expect(store.isAdmin).toBe(true)
   })
 
-  it('login should trigger popup and create profile if missing', async () => {
+  it('登入應觸發彈出視窗，並在缺少個人資料時建立', async () => {
     const mockUser = { uid: 'new', displayName: 'New' }
     mockSignInWithPopup.mockResolvedValue({ user: mockUser })
-    mockGetDoc.mockResolvedValue({ exists: () => false }) // Profile missing
+    mockGetDoc.mockResolvedValue({ exists: () => false }) // 個人資料缺失
 
     await store.login()
 
     expect(mockSignInWithPopup).toHaveBeenCalled()
-    expect(mockSetDoc).toHaveBeenCalled() // Created default profile
+    expect(mockSetDoc).toHaveBeenCalled() // 已建立預設個人資料
   })
 
-  it('logout should clear state', async () => {
+  it('登出應清除狀態', async () => {
     await store.logout()
     expect(mockSignOut).toHaveBeenCalled()
     expect(store.user).toBeNull()

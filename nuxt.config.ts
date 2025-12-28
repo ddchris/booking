@@ -10,4 +10,11 @@ export default defineNuxtConfig({
   ],
   css: ['@unocss/reset/tailwind.css'],
   compatibilityDate: '2024-04-03',
+  routeRules: {
+    '/**': {
+      headers: {
+        'Content-Security-Policy': "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http:; frame-src 'self' https: http:;"
+      }
+    }
+  }
 })

@@ -5,12 +5,18 @@
     </div>
 
     <ClientOnly>
-      <Calendar />
+      <Calendar :key="auth.user?.uid" />
     </ClientOnly>
   </div>
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  middleware: ['auth']
+})
+
+const auth = useAuthStore()
+
 // Page meta
 useHead({
   title: '預約時段 | 專注美髮設計'

@@ -12,10 +12,11 @@ export const useBookingStore = defineStore('booking', () => {
   // Actions
   const createBooking = async (
     timeSlot: number,
+    services: string[], // Added
     contactInfo?: { name: string, phone: string, lineId: string },
     saveAsDefault: boolean = false
   ) => {
-    // 1. Check Authentication
+    // 1. 驗證身分
     if (!authStore.user) {
       error.value = '請先登入'
       return false
@@ -25,19 +26,19 @@ export const useBookingStore = defineStore('booking', () => {
     error.value = null
 
     try {
-      // 2. Ensure Profile Exists or Update it
-      // If we provided contact info, we should use it to ensure profile is up to date or created.
+      // 2. 確保個人資料存在或更新它
+      // 如果提供了聯絡資訊，我們應該使用它來確保個人資料是最新的或已建立。
       if (contactInfo) {
         const { $db } = useNuxtApp()
         const { doc, setDoc, updateDoc } = await import('firebase/firestore') // Dynamic import to be safe or use what's available? 
-        // We can assume imports are available or use useNuxtApp helpers if setup.
-        // But store files usually import from 'firebase/firestore' directly at top.
-        // Let's assume standard imports are okay.
+        // 我們可以假設導入已可用，或者使用 useNuxtApp 輔助函數。
+        // 但 Store 檔案通常會在頂部直接從 'firebase/firestore' 導入。
+        // 我們假設標準導入是沒問題的。
 
         const userRef = doc($db, 'users', authStore.user.uid)
 
         if (!authStore.userProfile) {
-          // Create new Profile locally and in DB
+          // 在本地與資料庫建立新的個人資料
           const newProfile = {
             uid: authStore.user.uid,
             displayName: contactInfo.name || authStore.user.displayName || 'User',
@@ -52,43 +53,38 @@ export const useBookingStore = defineStore('booking', () => {
             lastBookingAt: null
           }
 
-          // Save to Firestore
+          // 儲存至 Firestore
           await setDoc(userRef, newProfile)
-          // Profile subscription in auth store should pick this up, but for immediate reference:
-          // We can't easily write to authStore.profile (it's readonly or ref?). 
-          // authStore.profile is a ref, we can technically write to it if exposed, but better to wait or pass 'newProfile' explicitly.
-          // However, authStore.profile is read-only via getters usually? No, it's a ref returned from setup.
-          // But strict stores might block it. The auth store returns { profile, ... }. It is mutable.
-          // Let's force update it to ensure next line works.
+          // Auth Store 中的個人資料訂閱應該會捕捉到這一點，但為了立即引用：
+          // 我們可以直接強制更新 authStore.profile。
           authStore.profile = newProfile as any
 
         } else if (saveAsDefault) {
-          // Update existing profile
+          // 更新現有的個人資料
           await updateDoc(userRef, {
             displayName: contactInfo.name,
             phoneNumber: contactInfo.phone,
             lineId: contactInfo.lineId
           })
-          // Optimistic update
-          authStore.profile.displayName = contactInfo.name
-          authStore.profile.phoneNumber = contactInfo.phone
-          authStore.profile.lineId = contactInfo.lineId
+          // 樂觀更新 (Optimistic update)
+          if (authStore.profile) {
+            authStore.profile.displayName = contactInfo.name
+            authStore.profile.phoneNumber = contactInfo.phone
+            authStore.profile.lineId = contactInfo.lineId
+          }
+
         } else {
-          // User didn't ask to save default, but we need to pass the current info to the Service
-          // if we want the Booking to reflect "Chris" instead of old name.
-          // bookingService.createBooking takes userProfile and copies fields.
-          // If we don't update profile, service uses old profile data.
-          // To fix this without saving to DB, we can create a "Temporary Profile Object" to pass to service.
-          // We just override the fields in a copy.
+          // 用戶沒有要求儲存預設值，但我們仍需將當前資訊傳遞給 Service
+          // 以確保預約內容反映的是「Chris」而不是舊名稱。
         }
       }
 
-      // 3. Prepare Profile for Service
-      // If we just created it, authStore.userProfile should be set (or we use a fallback).
+      // 3. 為 Service 準備個人資料
+      // 如果剛剛建立了，authStore.userProfile 應該已設置（或我們使用備案）。
       let profileToUse = authStore.userProfile
 
       if (!profileToUse && contactInfo) {
-        // Fallback if authStore didn't update yet (race condition)
+        // 備案：如果 authStore 尚未更新（競爭條件）
         profileToUse = {
           uid: authStore.user.uid,
           displayName: contactInfo.name,
@@ -104,7 +100,7 @@ export const useBookingStore = defineStore('booking', () => {
           lastBookingAt: null
         }
       } else if (profileToUse && contactInfo && !saveAsDefault) {
-        // Use provided info for this booking ONLY, without saving to DB
+        // 僅將提供的資訊用於「此筆預約」，不儲存至資料庫
         profileToUse = {
           ...profileToUse,
           displayName: contactInfo.name,
@@ -114,15 +110,15 @@ export const useBookingStore = defineStore('booking', () => {
       }
 
       if (!profileToUse) {
-        error.value = 'User profile not loaded'
+        error.value = '無法載入個人資料'
         return false
       }
 
       const { $db } = useNuxtApp()
-      await bookingService.createBooking(profileToUse, timeSlot, $db)
+      await bookingService.createBooking(profileToUse, timeSlot, services, $db)
       return true
     } catch (e: any) {
-      error.value = e.message || 'Booking failed'
+      error.value = e.message || '預約失敗'
       return false
     } finally {
       loading.value = false
@@ -139,7 +135,7 @@ export const useBookingStore = defineStore('booking', () => {
       await bookingService.cancelBooking(authStore.user.uid, bookingId, timeSlot)
       return true
     } catch (e: any) {
-      error.value = e.message || 'Cancellation failed'
+      error.value = e.message || '取消失敗'
       return false
     } finally {
       loading.value = false

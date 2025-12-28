@@ -10,7 +10,7 @@ export default defineNuxtRouteMiddleware((to, from) => {
   // A robust app waits for auth init.
   // For this scope: 
   if (!auth.isAuthenticated && !auth.loading) {
-    return navigateTo('/')
+    return navigateTo('/booking-rules')
   }
   // If loading, we might show a loader? 
   // For now simple check.

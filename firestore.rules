@@ -14,7 +14,8 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.admin == true;
+      // Revert to dynamic database variable to ensure compatibility across environments
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // TimeSlot Validation Logic (Must match utils/timeSlots.ts)
@@ -29,7 +30,8 @@ service cloud.firestore {
       // So we must shift UTC to TPE (+8 hours = +28800000 ms).
       
       let tpeTs = ts + 28800000;
-      let t = timestamp.fromMillis(tpeTs);
+      // CORRECT WAY to convert millis to keys in Rules:
+      let t = timestamp.date(1970, 1, 1) + duration.value(tpeTs, 'ms');
       
       // Minute must be 30
       let validMinute = t.minutes() == 30;
@@ -44,37 +46,26 @@ service cloud.firestore {
       return validMinute && validHour && notBreak;
     }
 
-    // --- Collections ---
+    // 47. --- Collections ---
 
     // 1. users Collection
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
       
       // Allow creation of own profile (First login)
-      allow create: if isOwner(uid);
+      allow create: if isOwner(uid) || isAdmin();
       
-      allow update: if isOwner(uid) 
-        // Prevent modifying restricted fields directly?
-        // Actually, the transaction updates 'activeBookingTimeSlot', 'lastBookingAt', 'totalBookings'.
-        // It's hard to restrict every field change formula here without Cloud Functions.
-        // We focus on the Critical Pointer Rule.
-        && (
-           // Case 1: Booking Created (activeBookingTimeSlot set to non-null)
-           (request.resource.data.activeBookingTimeSlot != null && request.resource.data.activeBookingTimeSlot != resource.data.activeBookingTimeSlot)
-           ||
-           // Case 2: Booking Cancelled (activeBookingTimeSlot set to null)
-           (request.resource.data.activeBookingTimeSlot == null)
-           ||
-           // Case 3: Profile update (activeBookingTimeSlot unchanged)
-           (request.resource.data.activeBookingTimeSlot == resource.data.activeBookingTimeSlot)
-        );
+      allow update: if isOwner(uid) || isAdmin();
     }
 
     // 2. bookings Collection (Private)
     match /bookings/{bookingId} {
       allow read: if resource.data.userId == request.auth.uid || isAdmin();
       
-      // Create (Booking)
+      // Allow Admin to Write (Create/Update/Delete) without strict checks
+      allow write: if isAdmin();
+
+      // Create (Booking) - User Strict Rules
       allow create: if isAuthenticated()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'booked'
@@ -86,7 +77,7 @@ service cloud.firestore {
         // Single Active Booking: User pointer MUST point to this slot
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.activeBookingTimeSlot == request.resource.data.timeSlot;
 
-      // Update (Cancel)
+      // Update (Cancel) - User Strict Rules
       allow update: if isAuthenticated()
         && resource.data.userId == request.auth.uid
         && request.resource.data.status == 'cancelled'
@@ -104,19 +95,10 @@ service cloud.firestore {
       // Anyone can read existence
       allow read: if true;
 
-      // Create: Only if creating a corresponding booking
-      // We can't easily iterate all bookings to find the one.
-      // But we can check if the USER claims to be creating it?
-      // Actually, standard pattern: Allow create if authenticated.
-      // The real protection is that 'bookings' creation triggers a check for 'public_slots'.
-      // If someone creates public_slots without bookings, they just block a slot.
-      // So we must ensure public_slots creation implies a valid booking creation.
-      // We can just rely on ensuring they are authenticated.
-      // Or better: validTimeSlot(slotId)
+      allow create: if isAuthenticated() || isAdmin(); 
+      allow update: if isAuthenticated() || isAdmin(); // Handle potential overwrites or locks
       
-      allow create: if isAuthenticated(); // Refined: could check if corresponding booking existsAfter
-      
-      allow delete: if isAuthenticated(); // User canceling
+      allow delete: if isAuthenticated() || isAdmin(); 
     }
   }
 }

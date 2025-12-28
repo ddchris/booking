@@ -4,12 +4,14 @@ import {
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
 
-// --- Interfaces ---
+// --- 介面定義 ---
+
 export interface UserProfile {
   uid: string
   displayName: string
   phoneNumber: string
   lineId: string
+  role: 'user' | 'admin'
   isBlocked: boolean
   activeBookingTimeSlot: number | null
   monthlyCancellations: Record<string, number> // 'YYYY_MM' -> count
@@ -22,6 +24,7 @@ export interface Booking {
   timeSlot: number
   status: 'booked' | 'cancelled'
   userId: string
+  services: string[] // Added: Multiple services support
   userSnapshot: {
     displayName: string
     phone: string
@@ -33,53 +36,57 @@ export interface Booking {
   canceledBy?: 'user' | 'admin'
 }
 
-// --- Service ---
+// --- 服務實作 ---
+
 export class BookingService {
   private get db() {
     return getFirestore()
   }
 
   /**
-   * Create a new booking with Transaction
-   * - Enforces: public_slots existence, blocked status, single active booking
+   * 使用 Transaction 建立新預約
+   * - 強制執行：檢查時段是否可用、使用者是否被封鎖、是否已有作用中的預約
    */
-  async createBooking(user: UserProfile, timeSlot: number, dbInstance?: any) {
+  async createBooking(user: UserProfile, timeSlot: number, services: string[], dbInstance?: any) {
     const db = dbInstance || this.db
     const slotId = String(timeSlot)
     const publicSlotRef = doc(db, 'public_slots', slotId)
     const userRef = doc(db, 'users', user.uid)
 
-    // Auto-generated ID for booking
+    // 預約的自動生成 ID
     const bookingRef = doc(collection(db, 'bookings'))
 
     try {
       await runTransaction(this.db, async (transaction) => {
-        // 1. Check if public_slots occupied (Source of Truth)
+        // 1. 檢查時段是否已被佔用（資料唯一來源）
         const publicSlotDoc = await transaction.get(publicSlotRef)
         if (publicSlotDoc.exists()) {
-          throw new Error('This time slot has already been booked.')
+          throw new Error('此時段已被預約。')
         }
 
-        // 2. Check User status (Fresh read)
+        // 2. 檢查使用者狀態（即時讀取）
         const userDoc = await transaction.get(userRef)
         if (!userDoc.exists()) {
-          throw new Error('User profile not found.')
+          throw new Error('找不到使用者個人資料。')
         }
         const userData = userDoc.data() as UserProfile
 
-        if (userData.isBlocked) {
-          throw new Error('You are blocked from making bookings.')
+        if (userData.isBlocked && userData.role !== 'admin') {
+          throw new Error('您已被封鎖，無法進行預約。')
         }
+        // 強制每人僅能有一個作用中的預約（包含管理員）
         if (userData.activeBookingTimeSlot != null) {
-          throw new Error('You already have an active future booking.')
+          throw new Error('您已有一個尚未進行的預約。')
         }
 
-        // 3. Prepare Data
+        // 3. 準備資料
+
         const now = Timestamp.now()
         const bookingData: Booking = {
           timeSlot,
           status: 'booked',
           userId: user.uid,
+          services: services || [], // Included: Multiple services
           userSnapshot: {
             displayName: user.displayName,
             phone: user.phoneNumber,
@@ -89,7 +96,8 @@ export class BookingService {
           updatedAt: now
         }
 
-        // 4. Writes
+        // 4. 寫入操作
+
         transaction.set(bookingRef, bookingData)
         transaction.set(publicSlotRef, { lockedAt: now })
 
@@ -106,14 +114,14 @@ export class BookingService {
 
       return bookingRef.id
     } catch (e: any) {
-      console.error('Booking failed:', e)
+      console.error('預約失敗：', e)
       throw e
     }
   }
 
   /**
-   * Cancel a booking (User action)
-   * - Enforces: Time limit (2h), Monthly limit (1)
+   * 取消預約（用戶端操作）
+   * - 強制執行：時間限制 (4小時)、每月限制 (1次)
    */
   async cancelBooking(userId: string, bookingId: string, timeSlot: number) {
     const bookingRef = doc(this.db, 'bookings', bookingId)
@@ -123,25 +131,25 @@ export class BookingService {
     try {
       await runTransaction(this.db, async (transaction) => {
         const bookingDoc = await transaction.get(bookingRef)
-        if (!bookingDoc.exists()) throw new Error('Booking not found.')
+        if (!bookingDoc.exists()) throw new Error('找不到預約記錄。')
 
         const booking = bookingDoc.data() as Booking
 
-        // 1. Validate Ownership & Status
-        if (booking.userId !== userId) throw new Error('Unauthorized.')
-        if (booking.status !== 'booked') throw new Error('Booking is not active.')
+        // 1. 驗證權限與狀態
+        if (booking.userId !== userId) throw new Error('權限不足。')
+        if (booking.status !== 'booked') throw new Error('預約並非作用中狀態。')
 
-        // 2. Validate Time Limit (server time)
-        // Note: Firestore Timestamp comparisons
+        // 2. 驗證時間限制（伺服器時間）
+        // 註：Firestore Timestamp 比較
         const now = Timestamp.now()
         const slotTime = booking.timeSlot
-        // 2 hours in ms
+        // 4 小時（毫秒）
         const diff = slotTime - now.toMillis()
-        if (diff < 2 * 60 * 60 * 1000) {
-          throw new Error('Cannot cancel within 2 hours of appointment.')
+        if (diff < 4 * 60 * 60 * 1000) {
+          throw new Error('預約前 4 小時內不可取消。')
         }
 
-        // 3. Validate Monthly Limit
+        // 3. 驗證每月限制
         const userDoc = await transaction.get(userRef)
         const userData = userDoc.data() as UserProfile
         const currentMonthKey = dayjs(now.toMillis()).format('YYYY_MM')
@@ -150,10 +158,11 @@ export class BookingService {
         const currentCount = monthlyCounts[currentMonthKey] || 0
 
         if (currentCount >= 1) {
-          throw new Error('Monthly cancellation limit exceeded (1 per month).')
+          throw new Error('已超過每月取消上限（每月 1 次）。')
         }
 
-        // 4. Writes
+        // 4. 寫入操作
+
         transaction.update(bookingRef, {
           status: 'cancelled',
           canceledAt: now,
@@ -163,21 +172,21 @@ export class BookingService {
 
         transaction.delete(publicSlotRef)
 
-        // Update User: clear pointer, increment cancel count
+        // 更新使用者：清除指針、增加取消次數
         transaction.update(userRef, {
           activeBookingTimeSlot: null,
           [`monthlyCancellations.${currentMonthKey}`]: currentCount + 1
         })
       })
     } catch (e: any) {
-      console.error('Cancellation failed:', e)
+      console.error('取消失敗：', e)
       throw e
     }
   }
 
   /**
-   * Admin Delete Booking
-   * - No penalties
+   * 管理員刪除預約
+   * - 無任何懲罰限制
    */
   async adminDeleteBooking(bookingId: string, timeSlot: number, userId: string) {
     const bookingRef = doc(this.db, 'bookings', bookingId)
@@ -186,7 +195,7 @@ export class BookingService {
 
     try {
       await runTransaction(this.db, async (transaction) => {
-        // Just execute delete logic without limit checks
+        // 直接執行刪除邏輯，不檢查限制
 
         const now = Timestamp.now()
         transaction.update(bookingRef, {
@@ -196,10 +205,10 @@ export class BookingService {
           updatedAt: now
         })
 
-        // Ensure public slot is removed
+        // 確保公用時段被移除
         transaction.delete(publicSlotRef)
 
-        // Clear user pointer, BUT DO NOT increment cancellation count
+        // 清除使用者指針，但 不要 增加取消計數
         transaction.update(userRef, {
           activeBookingTimeSlot: null
         })

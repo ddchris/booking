@@ -29,6 +29,8 @@ describe('Booking Store', () => {
     // Setup Mock Auth Store
     // @ts-ignore
     useAuthStore.mockReturnValue(mockAuthStore)
+    // Mock useNuxtApp for setDoc/updateDoc logic
+    vi.stubGlobal('useNuxtApp', () => ({ $db: {} }))
     store = useBookingStore()
   })
 
@@ -37,7 +39,8 @@ describe('Booking Store', () => {
     // @ts-ignore
     bookingService.createBooking.mockResolvedValue('bookingId')
 
-    const promise = store.createBooking(12345)
+    const services = ['haircut']
+    const promise = store.createBooking(12345, services)
     expect(store.loading).toBe(true) // Loading true during await
 
     const result = await promise
@@ -45,7 +48,7 @@ describe('Booking Store', () => {
     expect(store.loading).toBe(false)
     expect(result).toBe(true)
     expect(store.error).toBeNull()
-    expect(bookingService.createBooking).toHaveBeenCalledWith(mockAuthStore.userProfile, 12345)
+    expect(bookingService.createBooking).toHaveBeenCalledWith(mockAuthStore.userProfile, 12345, services, expect.anything())
   })
 
   it('createBooking should handle service errors', async () => {
@@ -53,7 +56,7 @@ describe('Booking Store', () => {
     // @ts-ignore
     bookingService.createBooking.mockRejectedValue(new Error('Service Error'))
 
-    const result = await store.createBooking(12345)
+    const result = await store.createBooking(12345, [])
 
     expect(result).toBe(false)
     expect(store.error).toBe('Service Error')
@@ -66,7 +69,7 @@ describe('Booking Store', () => {
     useAuthStore.mockReturnValue({ userProfile: null })
     store = useBookingStore() // Re-init
 
-    const result = await store.createBooking(123)
+    const result = await store.createBooking(123, [])
     expect(result).toBe(false)
     expect(bookingService.createBooking).not.toHaveBeenCalled()
   })

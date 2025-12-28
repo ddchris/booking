@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-6">
-    <h1 class="text-2xl font-bold text-white pt-2">我的預約</h1>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white pt-2 px-4">我的預約</h1>
 
     <div v-if="loading" class="text-center py-10 text-gray-500">
       載入中...
@@ -13,47 +13,64 @@
       </NuxtLink>
     </div>
 
-    <div v-else class="space-y-3">
-      <div 
-        v-for="booking in paginatedBookings" 
+    <div v-else class="space-y-4">
+      <el-descriptions
+        v-for="booking in paginatedBookings"
         :key="booking.id"
-        class="bg-gray-800 rounded-xl p-3 border border-gray-700 relative overflow-hidden flex items-center justify-between gap-4"
+        :column="6"
+        direction="vertical"
+        border
+        size="small"
+        class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm"
       >
-        <!-- Center Content (70% width roughly) -->
-        <div class="flex-1 flex items-center justify-between w-full max-w-[90%] mx-auto px-2 md:px-4">
-            
-            <!-- Left: Date info -->
-            <div class="flex items-center gap-4">
-              <div class="text-lg md:text-xl font-bold text-white font-mono tracking-wide">
-                {{ formatDate(booking.timeSlot) }}
-              </div>
-              <div class="text-sm md:text-base text-gray-400 font-mono">
-                {{ formatTime(booking.timeSlot) }}
-              </div>
-              <!-- Hidden on very small screens or make separate line -->
-              <div class="hidden sm:block text-xs text-gray-600">
-                (預約於 {{ formatDate(booking.createdAt.toMillis()) }})
-              </div>
-            </div>
+        <!-- Row 1: 3 Columns -->
+        <el-descriptions-item label="預約時間" :span="2">
+          <div class="font-bold font-mono text-sm whitespace-nowrap">
+            {{ formatDate(booking.timeSlot) }} {{ formatTime(booking.timeSlot) }}
+          </div>
+        </el-descriptions-item>
 
-            <!-- Right: Status & Action -->
-            <div class="flex items-center gap-4">
-               <div class="px-2 py-0.5 rounded text-xs font-medium tracking-wider" :class="getStatusClass(booking)">
-                  {{ getStatusLabel(booking) }}
-               </div>
-               
-               <button 
-                  v-if="canCancel(booking)"
-                  @click="handleCancel(booking)"
-                  class="text-xs text-red-400 hover:text-red-300 border border-red-500/30 px-2 py-1 rounded transition hover:bg-red-500/10"
-                  :disabled="bookingStore.loading"
-               >
-                  取消
-               </button>
-            </div>
-        </div>
-      </div>
+        <el-descriptions-item label="客戶資訊" :span="2">
+          <div class="font-medium text-amber-600 dark:text-amber-500 text-sm whitespace-nowrap">
+            {{ booking.userSnapshot?.displayName || '未知' }}
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ booking.userSnapshot?.phone || '--' }}</div>
+        </el-descriptions-item>
 
+        <el-descriptions-item label="預約項目" :span="2">
+          <div class="text-xs text-gray-700 dark:text-gray-300">
+            {{ getServiceLabels(booking.services) }}
+          </div>
+        </el-descriptions-item>
+
+        <!-- Row 2: 2 Columns -->
+        <el-descriptions-item label="操作時間" :span="3">
+          <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">
+            {{ formatFullDateTime(booking.updatedAt) }}
+            <span class="text-gray-500 text-[10px] ml-1">
+              ({{ booking.status === 'cancelled' ? '取消' : '建立' }})
+            </span>
+          </div>
+        </el-descriptions-item>
+
+        <el-descriptions-item label="狀態" :span="3">
+          <div class="flex items-center justify-between gap-3">
+            <el-tag :type="getStatusType(booking)" size="small">
+              {{ getStatusLabel(booking) }}
+            </el-tag>
+            <el-button 
+              v-if="canCancel(booking)"
+              type="danger" 
+              size="small" 
+              :loading="bookingStore.loading"
+              @click="handleCancel(booking)"
+            >
+              取消
+            </el-button>
+          </div>
+        </el-descriptions-item>
+      </el-descriptions>
+    </div>
       <!-- Pagination -->
       <div class="flex justify-center mt-6 p-4">
         <el-pagination
@@ -65,10 +82,9 @@
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
           background
-          small
+          size="small"
         />
       </div>
-    </div>
   </div>
 </template>
 
@@ -76,6 +92,7 @@
 import { collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { useBookingStore } from '~/stores/booking.store'
 
 definePageMeta({
   middleware: ['auth']
@@ -90,7 +107,15 @@ interface BookingRecord {
   timeSlot: number
   status: 'booked' | 'cancelled'
   createdAt: Timestamp
+  updatedAt: Timestamp
+  canceledAt?: Timestamp
   userId: string
+  canceledBy?: 'user' | 'admin'
+  services: string[]
+  userSnapshot: {
+    displayName: string
+    phone: string
+  }
 }
 
 const bookings = ref<BookingRecord[]>([])
@@ -126,11 +151,17 @@ const fetchBookings = async () => {
   try {
     const q = query(
       collection($db, 'bookings'),
-      where('userId', '==', auth.user.uid),
-      orderBy('timeSlot', 'desc')
+      where('userId', '==', auth.user.uid)
     )
     const snap = await getDocs(q)
-    bookings.value = snap.docs.map(d => ({ id: d.id, ...d.data() })) as BookingRecord[]
+    const rawData = snap.docs.map(d => ({ id: d.id, ...d.data() })) as BookingRecord[]
+    
+    // Client-side sort to avoid index build wait
+    bookings.value = rawData.sort((a, b) => {
+      const timeA = a.updatedAt?.toMillis?.() || 0
+      const timeB = b.updatedAt?.toMillis?.() || 0
+      return timeB - timeA
+    })
   } catch (e: any) {
     console.error('Fetch bookings failed:', e)
     // Check for index error specifically
@@ -151,16 +182,37 @@ watch(() => auth.user, (u) => {
 // UI Helpers
 const formatDate = (ts: number) => dayjs(ts).format('YYYY/MM/DD')
 const formatTime = (ts: number) => dayjs(ts).format('HH:mm')
+const formatFullDateTime = (ts: any) => {
+  if (!ts) return '-'
+  const d = ts.toMillis ? dayjs(ts.toMillis()) : dayjs(ts)
+  return d.format('YYYY/MM/DD HH:mm')
+}
 
-const getStatusClass = (b: BookingRecord) => {
-  if (b.status === 'cancelled') return 'bg-red-500/10 text-red-500'
-  // Check if past
-  if (dayjs(b.timeSlot).isBefore(dayjs())) return 'bg-gray-700/50 text-gray-500 border border-gray-700'
-  return 'bg-green-500/10 text-green-500 border border-green-500/20'
+const serviceMap: Record<string, string> = {
+  haircut: '剪髮',
+  perm: '燙髮',
+  coloring: '染髮',
+  washing: '洗髮',
+  scalp_care: '頭皮保養',
+  other: '其他'
+}
+
+const getServiceLabels = (services: string[]) => {
+  if (!services || !services.length) return '未指定'
+  return services.map(s => serviceMap[s] || s).join(', ')
+}
+
+
+const getStatusType = (b: BookingRecord) => {
+  if (b.status === 'cancelled') return 'danger'
+  if (dayjs(b.timeSlot).isBefore(dayjs())) return 'info'
+  return 'success'
 }
 
 const getStatusLabel = (b: BookingRecord) => {
-  if (b.status === 'cancelled') return '已取消'
+  if (b.status === 'cancelled') {
+    return b.canceledBy === 'admin' ? '管理員刪除' : '已取消'
+  }
   if (dayjs(b.timeSlot).isBefore(dayjs())) return '已過期'
   return '已預約'
 }
@@ -170,9 +222,9 @@ const canCancel = (b: BookingRecord) => {
   const now = dayjs()
   const slotDate = dayjs(b.timeSlot)
   
-  // Rule: 2 hours difference
+  // Rule: 4 hours difference
   const diffHours = slotDate.diff(now, 'hour', true)
-  if (diffHours < 2) return false
+  if (diffHours < 4) return false
   
   // Rule: Month limit check is done in backend/store, checking frontend logic here
   // We can show button but it might fail.
@@ -189,6 +241,7 @@ const handleCancel = async (b: BookingRecord) => {
         cancelButtonText: '暫不取消',
         type: 'warning',
         draggable: true,
+        confirmButtonClass: 'el-button--danger'
       }
     )
     
@@ -205,7 +258,12 @@ const handleCancel = async (b: BookingRecord) => {
         ? '距離預約時間不足2小時，無法線上取消'
         : errMsg
         
-      ElMessage.error(translatedMsg)
+      ElMessage.error({
+        message: translatedMsg,
+        showClose: true,
+        duration: 5000,
+        grouping: true
+      })
     }
   } catch (e) {
     // User cancelled the dialog (or error)
@@ -213,3 +271,58 @@ const handleCancel = async (b: BookingRecord) => {
   }
 }
 </script>
+
+<style scoped>
+:deep(.el-table .el-table__cell) {
+  box-sizing: border-box !important;
+  height: 50px !important;
+  max-height: 50px !important;
+  padding: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  overflow: hidden;
+}
+
+:deep(.el-table .cell) {
+  box-sizing: border-box !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  overflow: hidden;
+  line-height: 1.3;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+:deep(.el-table .cell > div) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 確保按鈕也在高度限制內 */
+:deep(.el-button--small) {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* 確保標籤也在高度限制內 */
+:deep(.el-tag--small) {
+  padding: 4px 10px;
+  height: auto;
+  line-height: 1.2;
+  font-size: 10px;
+}
+
+/* 確保表格邊框可見 */
+:deep(.el-table--border .el-table__cell) {
+  border-right: 1px solid var(--el-table-border-color);
+}
+
+:deep(.el-table--border) {
+  border: 1px solid var(--el-table-border-color);
+}
+</style>

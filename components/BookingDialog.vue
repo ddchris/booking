@@ -4,7 +4,7 @@
     <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="close"></div>
     
     <!-- Dialog -->
-    <div class="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-sm p-6 relative z-10 shadow-2xl">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-sm p-6 relative z-10 shadow-2xl max-h-[90vh] overflow-y-auto">
       <!-- Close Button -->
       <button 
         @click="close"
@@ -14,18 +14,42 @@
       </button>
 
       <h3 class="text-xl font-bold text-white mb-1">確認預約</h3>
-      <p class="text-gray-400 text-sm mb-6">
+      <p class="text-red-600 dark:text-red-500 text-sm font-bold mb-4">
         {{ formattedTime }}
       </p>
 
-      <form @submit.prevent="submit" class="space-y-4">
+      <form @submit.prevent="submit" class="space-y-3">
+        <!-- Service Type (Checkboxes for Multi-select) -->
+        <div>
+          <label class="block text-xs text-gray-500 mb-2">服務項目 (可複選)</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label 
+              v-for="opt in serviceOptions" 
+              :key="opt.value" 
+              class="flex items-center gap-2 bg-gray-900 border rounded-lg px-3 py-2 cursor-pointer transition-all duration-200" 
+              :class="form.serviceTypes.includes(opt.value) 
+                ? 'border-emerald-500 bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.1)]' 
+                : 'border-gray-700 opacity-60 hover:opacity-100 hover:bg-gray-700 hover:border-gray-500'"
+            >
+              <input 
+                type="checkbox" 
+                :value="opt.value" 
+                v-model="form.serviceTypes"
+                class="accent-emerald-500 w-4 h-4 rounded border-gray-600 bg-gray-800 text-emerald-500 focus:ring-emerald-500/40"
+              >
+              <span class="text-sm font-bold" :class="form.serviceTypes.includes(opt.value) ? 'text-emerald-500' : 'text-gray-300'">{{ opt.label }}</span>
+            </label>
+
+          </div>
+        </div>
+
         <div>
           <label class="block text-xs text-gray-500 mb-1">姓名</label>
           <input 
             v-model="form.displayName"
             type="text" 
             required
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-amber-500 placeholder-gray-600 text-sm"
             placeholder="請輸入姓名"
           >
         </div>
@@ -36,7 +60,7 @@
             v-model="form.phone"
             type="tel" 
             required
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-amber-500 placeholder-gray-600 text-sm"
             placeholder="09xx-xxx-xxx"
           >
         </div>
@@ -47,7 +71,7 @@
             v-model="form.lineId"
             type="text" 
             required
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500 placeholder-gray-600"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-amber-500 placeholder-gray-600 text-sm"
             placeholder="LINE ID"
           >
         </div>
@@ -56,7 +80,7 @@
           {{ validationError || bookingStore.error }}
         </div>
 
-        <div class="flex items-center gap-2 mb-4">
+        <div class="flex items-center gap-2 pt-1">
           <input 
             id="save-default"
             v-model="saveAsDefault"
@@ -68,7 +92,7 @@
           </label>
         </div>
 
-        <div class="flex gap-3 mt-2">
+        <div class="flex gap-3 pt-2">
           <button 
             type="button" 
             @click="close"
@@ -78,8 +102,8 @@
           </button>
           <button 
             type="submit"
-            :disabled="bookingStore.loading"
-            class="flex-1 px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="bookingStore.loading || form.serviceTypes.length === 0"
+            class="flex-1 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {{ bookingStore.loading ? '處理中...' : '確認預約' }}
           </button>
@@ -108,7 +132,17 @@ const emit = defineEmits<{
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
 
+const serviceOptions = [
+  { label: '剪髮', value: 'haircut' },
+  { label: '燙髮', value: 'perm' },
+  { label: '染髮', value: 'coloring' },
+  { label: '洗髮', value: 'washing' },
+  { label: '頭皮保養', value: 'scalp_care' },
+  { label: '其他', value: 'other' }
+]
+
 const form = reactive({
+  serviceTypes: ['haircut'] as string[],
   displayName: '',
   phone: '',
   lineId: ''
@@ -131,22 +165,25 @@ watch(() => props.modelValue, (val) => {
     validationError.value = ''
     bookingStore.clearError()
     
-    // 1. Try LocalStorage
-    const cached = localStorage.getItem('focus_hair_form')
+    // Reset form
+    form.serviceTypes = ['haircut']
+    form.displayName = ''
+    form.phone = ''
+    form.lineId = ''
+    saveAsDefault.value = false
+    
+    // Get user-specific localStorage key
+    const userId = auth.user?.uid
+    const storageKey = userId ? `focus_hair_form_${userId}` : 'focus_hair_form'
+    
+    // Only auto-fill if user has explicitly saved default data
+    const cached = localStorage.getItem(storageKey)
     if (cached) {
       const data = JSON.parse(cached)
       form.displayName = data.displayName || ''
       form.phone = data.phone || '' 
       form.lineId = data.lineId || ''
       saveAsDefault.value = !!data.saveAsDefault
-    } 
-    // 2. If User Profile exists and fields are empty (or valid), prefer User Profile?
-    // Requirement says "Save as default... automatic fill next time".
-    // If we have profile data, we should probably start with that.
-    if (auth.userProfile) {
-        if (!form.displayName) form.displayName = auth.userProfile.displayName || ''
-        if (!form.phone) form.phone = auth.userProfile.phoneNumber || ''
-        if (!form.lineId) form.lineId = auth.userProfile.lineId || ''
     }
   }
 })
@@ -171,21 +208,23 @@ const submit = async () => {
     lineId: form.lineId
   }
 
-  // Cache form data locally if "Save as Default" is checked OR always?
-  // User asked for "Save as Default". 
-  // Let's cache if saved.
+  // Save form data to user-specific localStorage if "Save as Default" is checked
   if (saveAsDefault.value) {
-     localStorage.setItem('focus_hair_form', JSON.stringify({ 
-         displayName: form.displayName, // Fix: use displayName key
-         phone: form.phone,
-         lineId: form.lineId,
-         saveAsDefault: true 
-     }))
+    const userId = auth.user?.uid
+    const storageKey = userId ? `focus_hair_form_${userId}` : 'focus_hair_form'
+    
+    localStorage.setItem(storageKey, JSON.stringify({ 
+      displayName: form.displayName,
+      phone: form.phone,
+      lineId: form.lineId,
+      saveAsDefault: true 
+    }))
   }
+
 
   // Call Store Action
   // We pass contactInfo to handle "Profile not loaded" case or Profile Update case.
-  const success = await bookingStore.createBooking(props.timeSlot, contactInfo, saveAsDefault.value)
+  const success = await bookingStore.createBooking(props.timeSlot, form.serviceTypes, contactInfo, saveAsDefault.value)
   
   if (success) {
     emit('success')
