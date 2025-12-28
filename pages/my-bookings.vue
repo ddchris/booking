@@ -94,55 +94,57 @@
         <el-descriptions
           v-for="booking in paginatedBookings"
           :key="booking.id"
-          :column="6"
+          :column="2"
           direction="vertical"
           border
           size="small"
           class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm"
         >
-          <!-- Row 1: 3 Columns -->
+          <!-- Row 1: Full Width -->
           <el-descriptions-item label="預約時間" :span="2">
-            <div class="font-bold font-mono text-sm whitespace-nowrap">
+            <div class="font-bold font-mono text-sm">
               {{ formatDate(booking.timeSlot) }} {{ formatTime(booking.timeSlot) }}
             </div>
           </el-descriptions-item>
 
-          <el-descriptions-item label="客戶資訊" :span="2">
-            <div class="font-medium text-amber-600 dark:text-amber-500 text-sm whitespace-nowrap">
+          <!-- Row 2: 50/50 -->
+          <el-descriptions-item label="客戶資訊" :span="1">
+            <div class="font-medium text-amber-600 dark:text-amber-500 text-sm">
               {{ booking.userSnapshot?.displayName || '未知' }}
             </div>
             <div class="text-xs text-gray-500 dark:text-gray-400">{{ booking.userSnapshot?.phone || '--' }}</div>
           </el-descriptions-item>
 
-          <el-descriptions-item label="預約項目" :span="2">
+          <el-descriptions-item label="預約項目" :span="1">
             <div class="text-xs text-gray-700 dark:text-gray-300">
               {{ getServiceLabels(booking.services) }}
             </div>
           </el-descriptions-item>
 
-          <!-- Row 2: 2 Columns -->
-          <el-descriptions-item label="操作時間" :span="3">
+          <!-- Row 3: 50/50 -->
+          <el-descriptions-item label="操作時間" :span="1">
             <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">
               <div v-if="booking.status === 'cancelled' && booking.canceledAt">
                 {{ dayjs(booking.canceledAt.toMillis()).format('YYYY/MM/DD HH:mm') }}
-                <span class="text-red-500 text-[10px] ml-1">(取消)</span>
+                <div class="text-red-500 text-[10px] mt-0.5">(取消)</div>
               </div>
               <div v-else>
                 {{ booking.createdAt ? dayjs(booking.createdAt.toMillis()).format('YYYY/MM/DD HH:mm') : '-' }}
-                <span class="text-gray-500 text-[10px] ml-1">(建立)</span>
+                <div class="text-gray-500 text-[10px] mt-0.5">(建立)</div>
               </div>
             </div>
           </el-descriptions-item>
 
-          <el-descriptions-item label="狀態" :span="3">
-            <div class="flex items-center justify-between gap-3">
-              <el-tag :type="getStatusType(booking)" size="small">
+          <el-descriptions-item label="狀態" :span="1">
+            <div class="flex flex-col gap-2 pt-1">
+              <el-tag :type="getStatusType(booking)" size="small" class="w-fit">
                 {{ getStatusLabel(booking) }}
               </el-tag>
               <el-button 
                 v-if="canCancel(booking)"
                 type="danger" 
                 size="small" 
+                class="w-fit !ml-0"
                 :loading="bookingStore.loading"
                 @click="handleCancel(booking)"
               >
@@ -152,6 +154,7 @@
           </el-descriptions-item>
         </el-descriptions>
       </div>
+
     </div>
       <!-- Pagination -->
       <div class="flex justify-center mt-6 p-4">
