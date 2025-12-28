@@ -16,6 +16,6 @@ const auth = useAuthStore()
 
 // Page meta
 useHead({
-  title: '預約時段 | 專注美髮設計'
+  title: '預約時段 | 專注理髮設計'
 })
 </script>
