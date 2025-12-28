@@ -6,7 +6,7 @@
         <NuxtLink to="/" class="text-lg md:text-xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-1.5 md:gap-2">
           <!-- Logo Icon -->
           <div class="i-carbon-scis-transparent w-4 h-4 md:w-6 md:h-6" />
-          <span>專注美髮預約</span>
+          <span>專注理髮預約</span>
         </NuxtLink>
 
         <!-- Use ClientOnly to avoid hydration mismatch on auth state -->
