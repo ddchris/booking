@@ -93,10 +93,6 @@
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, getFirestore } from 'firebase/firestore'
 import dayjs from 'dayjs'
 
-definePageMeta({
-  middleware: ['auth']
-})
-
 const { $db } = useNuxtApp()
 const auth = useAuthStore()
 

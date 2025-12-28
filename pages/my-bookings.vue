@@ -13,63 +13,145 @@
       </NuxtLink>
     </div>
 
-    <div v-else class="space-y-4">
-      <el-descriptions
-        v-for="booking in paginatedBookings"
-        :key="booking.id"
-        :column="6"
-        direction="vertical"
-        border
-        size="small"
-        class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm"
-      >
-        <!-- Row 1: 3 Columns -->
-        <el-descriptions-item label="預約時間" :span="2">
-          <div class="font-bold font-mono text-sm whitespace-nowrap">
-            {{ formatDate(booking.timeSlot) }} {{ formatTime(booking.timeSlot) }}
-          </div>
-        </el-descriptions-item>
+    <div v-else class="space-y-4 px-4 md:px-0">
+      <!-- Desktop: Table View (>= 1024px) -->
+      <div class="hidden lg:block w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-300">
+        <el-table 
+          :data="paginatedBookings" 
+          style="width: 100%" 
+          border
+        >
+          <!-- Customer Info (Self) -->
+          <el-table-column label="客戶資訊" min-width="140">
+            <template #default="{ row }">
+              <div class="font-medium text-amber-600 dark:text-amber-500 whitespace-nowrap">{{ row.userSnapshot?.displayName || '未知' }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ row.userSnapshot?.phone || '--' }}</div>
+            </template>
+          </el-table-column>
 
-        <el-descriptions-item label="客戶資訊" :span="2">
-          <div class="font-medium text-amber-600 dark:text-amber-500 text-sm whitespace-nowrap">
-            {{ booking.userSnapshot?.displayName || '未知' }}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400">{{ booking.userSnapshot?.phone || '--' }}</div>
-        </el-descriptions-item>
+          <!-- Appointment Time -->
+          <el-table-column label="預約時間" min-width="160">
+            <template #default="{ row }">
+              <div class="font-bold font-mono text-base whitespace-nowrap">
+                {{ formatDate(row.timeSlot) }} {{ formatTime(row.timeSlot) }}
+              </div>
+            </template>
+          </el-table-column>
 
-        <el-descriptions-item label="預約項目" :span="2">
-          <div class="text-xs text-gray-700 dark:text-gray-300">
-            {{ getServiceLabels(booking.services) }}
-          </div>
-        </el-descriptions-item>
+          <!-- Operation Time -->
+          <el-table-column label="操作時間" min-width="160">
+             <template #default="{ row }">
+               <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                 <div v-if="row.status === 'cancelled' && row.canceledAt">
+                   {{ dayjs(row.canceledAt.toMillis()).format('YYYY/MM/DD HH:mm') }}
+                   <span class="text-red-500 dark:text-red-400 text-[10px] ml-1">(取消)</span>
+                 </div>
+                 <div v-else>
+                   {{ row.createdAt ? dayjs(row.createdAt.toMillis()).format('YYYY/MM/DD HH:mm') : '-' }}
+                   <span class="text-gray-500 text-[10px] ml-1">(建立)</span>
+                 </div>
+               </div>
+             </template>
+          </el-table-column>
 
-        <!-- Row 2: 2 Columns -->
-        <el-descriptions-item label="操作時間" :span="3">
-          <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">
-            {{ formatFullDateTime(booking.updatedAt) }}
-            <span class="text-gray-500 text-[10px] ml-1">
-              ({{ booking.status === 'cancelled' ? '取消' : '建立' }})
-            </span>
-          </div>
-        </el-descriptions-item>
+          <!-- Status -->
+          <el-table-column label="狀態" min-width="100" align="center">
+            <template #default="{ row }">
+               <el-tag :type="getStatusType(row)" size="small">
+                 {{ getStatusLabel(row) }}
+               </el-tag>
+            </template>
+          </el-table-column>
 
-        <el-descriptions-item label="狀態" :span="3">
-          <div class="flex items-center justify-between gap-3">
-            <el-tag :type="getStatusType(booking)" size="small">
-              {{ getStatusLabel(booking) }}
-            </el-tag>
-            <el-button 
-              v-if="canCancel(booking)"
-              type="danger" 
-              size="small" 
-              :loading="bookingStore.loading"
-              @click="handleCancel(booking)"
-            >
-              取消
-            </el-button>
-          </div>
-        </el-descriptions-item>
-      </el-descriptions>
+          <!-- Service Items -->
+          <el-table-column label="預約項目" min-width="140">
+            <template #default="{ row }">
+              <div class="text-xs text-gray-700 dark:text-gray-300">
+                {{ getServiceLabels(row.services) }}
+              </div>
+            </template>
+          </el-table-column>
+
+          <!-- Action -->
+          <el-table-column label="操作" min-width="110" align="center">
+             <template #default="{ row }">
+               <el-button 
+                 v-if="canCancel(row)"
+                 type="danger" 
+                 size="small" 
+                 :loading="bookingStore.loading"
+                 @click="handleCancel(row)"
+               >
+                 取消預約
+               </el-button>
+             </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- Mobile: el-descriptions View (< 1024px) -->
+      <div class="lg:hidden space-y-4">
+        <el-descriptions
+          v-for="booking in paginatedBookings"
+          :key="booking.id"
+          :column="6"
+          direction="vertical"
+          border
+          size="small"
+          class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm"
+        >
+          <!-- Row 1: 3 Columns -->
+          <el-descriptions-item label="預約時間" :span="2">
+            <div class="font-bold font-mono text-sm whitespace-nowrap">
+              {{ formatDate(booking.timeSlot) }} {{ formatTime(booking.timeSlot) }}
+            </div>
+          </el-descriptions-item>
+
+          <el-descriptions-item label="客戶資訊" :span="2">
+            <div class="font-medium text-amber-600 dark:text-amber-500 text-sm whitespace-nowrap">
+              {{ booking.userSnapshot?.displayName || '未知' }}
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{ booking.userSnapshot?.phone || '--' }}</div>
+          </el-descriptions-item>
+
+          <el-descriptions-item label="預約項目" :span="2">
+            <div class="text-xs text-gray-700 dark:text-gray-300">
+              {{ getServiceLabels(booking.services) }}
+            </div>
+          </el-descriptions-item>
+
+          <!-- Row 2: 2 Columns -->
+          <el-descriptions-item label="操作時間" :span="3">
+            <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">
+              <div v-if="booking.status === 'cancelled' && booking.canceledAt">
+                {{ dayjs(booking.canceledAt.toMillis()).format('YYYY/MM/DD HH:mm') }}
+                <span class="text-red-500 text-[10px] ml-1">(取消)</span>
+              </div>
+              <div v-else>
+                {{ booking.createdAt ? dayjs(booking.createdAt.toMillis()).format('YYYY/MM/DD HH:mm') : '-' }}
+                <span class="text-gray-500 text-[10px] ml-1">(建立)</span>
+              </div>
+            </div>
+          </el-descriptions-item>
+
+          <el-descriptions-item label="狀態" :span="3">
+            <div class="flex items-center justify-between gap-3">
+              <el-tag :type="getStatusType(booking)" size="small">
+                {{ getStatusLabel(booking) }}
+              </el-tag>
+              <el-button 
+                v-if="canCancel(booking)"
+                type="danger" 
+                size="small" 
+                :loading="bookingStore.loading"
+                @click="handleCancel(booking)"
+              >
+                取消
+              </el-button>
+            </div>
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
     </div>
       <!-- Pagination -->
       <div class="flex justify-center mt-6 p-4">
@@ -93,10 +175,6 @@ import { collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/
 import dayjs from 'dayjs'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useBookingStore } from '~/stores/booking.store'
-
-definePageMeta({
-  middleware: ['auth']
-})
 
 const { $db } = useNuxtApp()
 const auth = useAuthStore()
