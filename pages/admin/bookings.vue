@@ -219,9 +219,6 @@ import dayjs from 'dayjs'
 import { bookingService } from '~/services/booking.service'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-definePageMeta({
-  middleware: ['auth'] 
-})
 
 const { $db } = useNuxtApp()
 const auth = useAuthStore()

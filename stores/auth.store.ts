@@ -93,8 +93,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  let initPromise: Promise<void> | null = null
+
   const initAuth = () => {
     if (isInitialized.value) return Promise.resolve()
+    if (initPromise) return initPromise
+
+    // 在伺服器端，Firebase Auth SDK 無法工作，直接完成初始化並設為訪客
+    if (process.server) {
+      isInitialized.value = true
+      loading.value = false
+      return Promise.resolve()
+    }
+
 
     // 立即從快取中恢復（防止畫面閃爍）
     const cached = getLocalSession()
@@ -105,7 +116,7 @@ export const useAuthStore = defineStore('auth', () => {
       loading.value = false // 立即將 loading 設為 false 以顯示 UI
     }
 
-    return new Promise<void>((resolve) => {
+    initPromise = new Promise<void>((resolve) => {
       onAuthStateChanged($auth, (currentUser) => {
         console.log('[AuthStore] Firebase Auth 已驗證：', currentUser?.uid || '訪客')
         // 使用 markRaw 防止 Vue 對 Firebase User 物件進行深層代理
@@ -127,6 +138,8 @@ export const useAuthStore = defineStore('auth', () => {
         resolve()
       })
     })
+
+    return initPromise
   }
 
   const subscribeToProfile = (uid: string) => {

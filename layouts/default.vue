@@ -170,8 +170,16 @@
     </header>
 
     <!-- Main Content (Scrolls internally) -->
-    <main class="flex-1 w-full max-w-7xl mx-auto overflow-y-auto relative md:px-8">
+    <main v-if="auth.isInitialized" class="flex-1 w-full max-w-7xl mx-auto overflow-y-auto relative md:px-8">
       <slot />
+    </main>
+
+    <!-- Initializing State -->
+    <main v-else class="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
+       <div class="flex flex-col items-center gap-3">
+          <div class="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+          <p class="text-sm text-gray-500 dark:text-gray-400 font-medium">系統初始化中...</p>
+       </div>
     </main>
 
     <!-- Footer -->
