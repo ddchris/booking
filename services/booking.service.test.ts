@@ -73,7 +73,8 @@ describe('BookingService', () => {
       })
 
       const user = { uid: 'user1', isBlocked: false, activeBookingTimeSlot: null } as any
-      await expect(service.createBooking(user, 123, [])).rejects.toThrow('already been booked')
+      await expect(service.createBooking(user, 123, [])).rejects.toThrow('此時段已被預約')
+
     })
 
     it('如果用戶被封鎖，應拋出錯誤', async () => {
@@ -82,21 +83,22 @@ describe('BookingService', () => {
         if (ref.path.includes('users')) return { exists: () => true, data: () => ({ isBlocked: true }) }
         return { exists: () => false }
       })
-      await expect(service.createBooking({ uid: 'u1' } as any, 123, [])).rejects.toThrow('blocked')
+      await expect(service.createBooking({ uid: 'u1' } as any, 123, [])).rejects.toThrow('封鎖')
+
     })
 
-    it('should throw error if user has active booking', async () => {
+    it('如果用戶已有預約應拋出錯誤', async () => {
       mockTransaction.get.mockImplementation((ref) => {
         if (ref.path.includes('public_slots')) return { exists: () => false }
         if (ref.path.includes('users')) return { exists: () => true, data: () => ({ activeBookingTimeSlot: 999 }) }
         return { exists: () => false }
       })
-      await expect(service.createBooking({ uid: 'u1' } as any, 123, [])).rejects.toThrow('active future booking')
+      await expect(service.createBooking({ uid: 'u1' } as any, 123, [])).rejects.toThrow('預約')
     })
   })
 
-  describe('cancelBooking', () => {
-    it('should cancel booking if limits valid', async () => {
+  describe('取消預約 (cancelBooking)', () => {
+    it('若符合限制應成功取消預約', async () => {
       // Current Mock Time: 1700000000000
       // Valid Slot: Time + 5 hours (Limit is 4 hours)
       const slotTime = 1700000000000 + (5 * 60 * 60 * 1000)
