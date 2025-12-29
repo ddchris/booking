@@ -218,6 +218,18 @@ const handleLogout = async () => {
 
 const isMenuOpen = ref(false)
 const isLoginModalVisible = ref(false)
+const route = useRoute()
+
+// Check for auto-open param (e.g. coming from in-app browser redirection)
+if (process.client && route.query.openLogin === 'true') {
+  isLoginModalVisible.value = true
+  
+  // Clean up the URL
+  const url = new URL(window.location.href)
+  url.searchParams.delete('openLogin')
+  url.searchParams.delete('openExternalBrowser')
+  window.history.replaceState({}, '', url.toString())
+}
 
 const handleLogin = () => {
   isMenuOpen.value = false

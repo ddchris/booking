@@ -116,17 +116,17 @@ const handleLogin = (provider: string) => {
 }
 
 const handleOpenExternal = () => {
-  // Try to force open in external browser
-  // For LINE, it might support some specific URL schemes, but generally we just tell user to click menu.
-  // Some apps support ?openExternalBrowser=1 but it's not universal.
-  const url = window.location.href
+  const currentUrl = new URL(window.location.href)
   
-  // Optional: Add specific logic for LINE if needed
-  // if (/Line/i.test(navigator.userAgent)) { ... }
-  
-  // Generic fallback: alert instructions or try to open a dummy link
-  // Most modern apps on iOS/Android don't allow programmatic "force open outside" without user action.
-  window.open(url, '_blank')
+  // Add a parameter to tell the external browser to open the login modal automatically
+  currentUrl.searchParams.set('openLogin', 'true')
+
+  // LINE specific: 'openExternalBrowser=1' forces LINE to open system browser
+  if (/Line/i.test(navigator.userAgent)) {
+    currentUrl.searchParams.set('openExternalBrowser', '1')
+  }
+
+  window.open(currentUrl.toString(), '_blank')
 }
 </script>
 
