@@ -188,6 +188,9 @@
         &copy; {{ new Date().getFullYear() }} Focus Hair Design. All rights reserved.
       </div>
     </footer>
+
+    <!-- Login Modal -->
+    <LoginModal v-model="isLoginModalVisible" @login="executeLogin" />
   </div>
 </template>
 
@@ -206,16 +209,6 @@ if (process.client) {
   auth.initAuth()
 }
 
-const handleLogin = async () => {
-  try {
-    await auth.login()
-    navigateTo('/')
-  } catch (e) {
-    // alert('登入失敗') - let auth store handle errors or show accessible toast usually
-    console.error(e)
-  }
-}
-
 const handleLogout = async () => {
   isMenuOpen.value = false
   await auth.logout()
@@ -224,6 +217,21 @@ const handleLogout = async () => {
 }
 
 const isMenuOpen = ref(false)
+const isLoginModalVisible = ref(false)
+
+const handleLogin = () => {
+  isMenuOpen.value = false
+  isLoginModalVisible.value = true
+}
+
+const executeLogin = async () => {
+  try {
+    await auth.login()
+    navigateTo('/')
+  } catch (e) {
+    console.error(e)
+  }
+}
 </script>
 
 <style>
