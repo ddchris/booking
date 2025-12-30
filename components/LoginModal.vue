@@ -88,7 +88,7 @@ const isInAppBrowser = ref(false)
 
 const checkInAppBrowser = () => {
   if (!import.meta.client) return false
-  const ua = navigator.userAgent || navigator.vendor || (window as any).opera
+  const ua = navigator.userAgent
   
   // Detection regex for common in-app browsers
   const rules = [
