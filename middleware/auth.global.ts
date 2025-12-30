@@ -5,7 +5,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // 伺服器端先跳過跳轉，讓客戶端初始化 Firebase 後再決定
   // 這樣可以避免 SSR 時因為找不到 Firebase Session 而產生錯誤的跳轉
-  if (process.server) return
+  if (import.meta.server) return
 
   const auth = useAuthStore()
 

@@ -205,7 +205,7 @@ const isDark = useDark()
 const toggleDark = useToggle(isDark)
 
 // Initialize Auth as early as possible on client side
-if (process.client) {
+if (import.meta.client) {
   auth.initAuth()
 }
 
@@ -221,7 +221,7 @@ const isLoginModalVisible = ref(false)
 const route = useRoute()
 
 // Check for auto-open param (e.g. coming from in-app browser redirection)
-if (process.client && route.query.openLogin === 'true') {
+if (import.meta.client && route.query.openLogin === 'true') {
   isLoginModalVisible.value = true
   
   // Clean up the URL

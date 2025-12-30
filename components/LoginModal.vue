@@ -87,7 +87,7 @@ const visible = computed({
 const isInAppBrowser = ref(false)
 
 const checkInAppBrowser = () => {
-  if (!process.client) return false
+  if (!import.meta.client) return false
   const ua = navigator.userAgent || navigator.vendor || (window as any).opera
   
   // Detection regex for common in-app browsers

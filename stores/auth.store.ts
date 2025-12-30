@@ -22,7 +22,7 @@ export const useAuthStore = defineStore('auth', () => {
   // 輔助函數：獲取本地工作階段
 
   const getLocalSession = () => {
-    if (!process.client) return null
+    if (!import.meta.client) return null
     try {
       const stored = localStorage.getItem(SESSION_KEY)
       if (!stored) return null
@@ -44,7 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
   // 輔助函數：儲存本地工作階段
 
   const saveLocalSession = (userData: any, profileData: any) => {
-    if (!process.client) return
+    if (!import.meta.client) return
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       user: userData ? {
         uid: userData.uid,
@@ -60,7 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
   // 輔助函數：清除工作階段
 
   const clearLocalSession = () => {
-    if (!process.client) return
+    if (!import.meta.client) return
     localStorage.removeItem(SESSION_KEY)
   }
 
@@ -100,7 +100,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (initPromise) return initPromise
 
     // 在伺服器端，Firebase Auth SDK 無法工作，直接完成初始化並設為訪客
-    if (process.server) {
+    if (import.meta.server) {
       isInitialized.value = true
       loading.value = false
       return Promise.resolve()
