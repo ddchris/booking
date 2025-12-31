@@ -46,24 +46,6 @@
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5" alt="Google" />
             使用 Google 登入
           </button>
-
-          <!-- Facebook Placeholder -->
-          <button 
-            disabled
-            class="w-full flex items-center justify-center gap-3 bg-[#1877F2] opacity-50 cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition duration-200 shadow-sm"
-          >
-            <div class="i-carbon-logo-facebook w-5 h-5" />
-            使用 Facebook 登入
-          </button>
-
-          <!-- LINE Placeholder -->
-          <button 
-            disabled
-            class="w-full flex items-center justify-center gap-3 bg-[#06C755] opacity-50 cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition duration-200 shadow-sm"
-          >
-            <div class="i-carbon-chat w-5 h-5" />
-            使用 LINE 登入
-          </button>
         </div>
       </template>
     </div>
