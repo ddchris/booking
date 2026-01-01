@@ -74,9 +74,11 @@ export class BookingService {
         if (userData.isBlocked && userData.role !== 'admin') {
           throw new Error('您已被封鎖，無法進行預約。')
         }
-        // 強制每人僅能有一個作用中的預約（包含管理員）
         if (userData.activeBookingTimeSlot != null) {
-          throw new Error('您已有一個尚未進行的預約。')
+          // 只有當現有預約是在「未來」時才阻擋
+          if (userData.activeBookingTimeSlot > Date.now()) {
+            throw new Error('您已有一個尚未進行的預約。')
+          }
         }
 
         // 3. 準備資料
@@ -221,12 +223,13 @@ export class BookingService {
   /**
    * 管理員禁用特定時段
    */
-  async blockSlot(timeSlot: number) {
+  async blockSlot(timeSlot: number, note?: string) {
     const slotId = String(timeSlot)
     const publicSlotRef = doc(this.db, 'public_slots', slotId)
     await setDoc(publicSlotRef, {
       lockedAt: Timestamp.now(),
-      isBlocked: true // Optional flag to distinguish from regular bookings if needed
+      isBlocked: true,
+      note: note || null
     })
   }
 
@@ -256,13 +259,17 @@ export class BookingService {
   /**
    * 管理員禁用整天
    */
-  async blockDay(timeSlots: number[]) {
+  async blockDay(timeSlots: number[], note?: string) {
     const batch = writeBatch(this.db)
     const now = Timestamp.now()
 
     timeSlots.forEach(ts => {
       const ref = doc(this.db, 'public_slots', String(ts))
-      batch.set(ref, { lockedAt: now, isBlocked: true })
+      batch.set(ref, {
+        lockedAt: now,
+        isBlocked: true,
+        note: note || null
+      })
     })
 
     await batch.commit()

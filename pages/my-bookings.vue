@@ -327,17 +327,24 @@ const handleCancel = async (b: BookingRecord) => {
     )
     
     // User clicked confirm
-    const success = await bookingStore.cancelBooking(b.id, b.timeSlot)
+    const success = await bookingStore.cancelBooking(b.id, b.timeSlot, b.userId)
     if (success) {
       ElMessage.success('已取消預約')
       fetchBookings() // Refresh list
     } else {
       const errMsg = bookingStore.error || '取消失敗'
-      const translatedMsg = errMsg.includes('Monthly cancellation limit') 
-        ? '本月已達自行取消次數上限(1次)' 
-        : errMsg.includes('2 hours')
-        ? '距離預約時間不足2小時，無法線上取消'
-        : errMsg
+      let translatedMsg = errMsg
+
+      // 如果 errMsg 已經是中文提示（來自 Store 的 throw），則直接使用
+      if (errMsg.includes('上限') || errMsg.includes('4 小時') || errMsg.includes('權限')) {
+        translatedMsg = errMsg
+      } else if (errMsg.includes('Monthly cancellation limit')) {
+        translatedMsg = '本月已達自行取消次數上限(1次)'
+      } else if (errMsg.includes('Missing or insufficient permissions') || errMsg.includes('permissions')) {
+        translatedMsg = '權限不足：您可能無法修改此紀錄，或系統規則限制操作'
+      } else if (errMsg.includes('NotFound') || errMsg.includes('找不到')) {
+        translatedMsg = '找不到該預約記錄，可能已被刪除'
+      }
         
       ElMessage.error({
         message: translatedMsg,

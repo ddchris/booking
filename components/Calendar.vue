@@ -122,8 +122,13 @@
                    <!-- Formatted Time -->
                    <div class="leading-none flex flex-col lg:flex-row items-center lg:items-center justify-center w-full gap-0.5 md:gap-0.5 lg:gap-1">
                       <template v-if="slot.isBlockedByAdmin">
-                        <div class="i-carbon-ban text-gray-400 text-lg mr-1" v-if="auth.isAdmin"></div>
-                        <span class="text-sm md:text-xl font-mono font-bold tracking-wider">禁止預約</span>
+                        <div class="i-carbon-ban text-gray-400 text-lg mr-1" v-if="auth.isAdmin && !slot.blockedNote"></div>
+                        <span 
+                          class="font-mono font-bold tracking-tight px-1 break-all line-clamp-2 text-sm md:text-xl"
+                          :class="slot.blockedNote ? 'leading-tight text-gray-500/90' : 'tracking-wider'"
+                        >
+                          {{ slot.blockedNote || '禁止預約' }}
+                        </span>
                       </template>
                       <template v-else-if="slot.status === 'booked'">
                         <span class="text-sm md:text-xl font-mono font-bold tracking-wider">已被預約</span>
@@ -173,7 +178,7 @@ const auth = useAuthStore()
 
 // --- State ---
 const anchorDate = ref(dayjs()) 
-const occupiedSlotsMap = ref<Map<string, { lockedAt: any, isBlocked?: boolean }>>(new Map())
+const occupiedSlotsMap = ref<Map<string, { lockedAt: any, isBlocked?: boolean, note?: string }>>(new Map())
 const showDialog = ref(false)
 const selectedSlot = ref<number | null>(null)
 const bookingStore = useBookingStore()
@@ -205,6 +210,7 @@ interface ViewSlot {
   isDisabled: boolean
   isNotYetOpen: boolean
   isBlockedByAdmin: boolean
+  blockedNote?: string
   status: 'available' | 'mine' | 'past' | 'booked'
 }
 
@@ -269,7 +275,8 @@ const daysInView = computed<ViewDay[]>(() => {
         isMyBooking: isMy,
         isDisabled: status !== 'available' && status !== 'mine',
         isNotYetOpen,
-        isBlockedByAdmin: isBlocked, // Added property
+        isBlockedByAdmin: isBlocked,
+        blockedNote: slotData?.note, // Added property
         status
       }
     })
@@ -345,8 +352,11 @@ const handleSlotClick = async (slot: any) => {
     return 
   }
   if (auth.userProfile?.activeBookingTimeSlot) { 
-    ElMessage.warning('您已有進行中的預約，請先完成或取消現有預約')
-    return 
+    const activeSlot = Number(auth.userProfile.activeBookingTimeSlot)
+    if (activeSlot > Date.now()) {
+      ElMessage.warning('您已有進行中的預約，請先完成或取消現有預約')
+      return 
+    }
   }
   
   selectedSlot.value = slot.ts
@@ -418,7 +428,15 @@ const handleAdminSlotClick = async (slot: any) => {
       ).catch(action => action)
 
       if (result === 'confirm') {
-        await bookingStore.blockSlot(slot.ts)
+        const noteResult = await ElMessageBox.prompt('請輸入禁用備註 (選填)', '設定禁用備註', {
+          confirmButtonText: '確定',
+          cancelButtonText: '跳過',
+          customClass: 'dark-dialog',
+          inputValue: '',
+        }).catch(() => ({ value: '' }))
+
+        const note = typeof noteResult === 'object' ? noteResult.value : (noteResult || '')
+        await bookingStore.blockSlot(slot.ts, note)
         ElMessage.success('已設定為禁止預約')
       } else if (result === 'cancel') {
         // Trigger normal booking dialog
@@ -460,7 +478,15 @@ const handleDayHeaderClick = async (day: ViewDay) => {
         }
       )
       
-      const success = await bookingStore.blockDay(allSlots)
+      const noteResult = await ElMessageBox.prompt('請輸入整日禁用備註 (選填)', '設定禁用備註', {
+        confirmButtonText: '確定',
+        cancelButtonText: '跳過',
+        customClass: 'dark-dialog',
+        inputValue: '',
+      }).catch(() => ({ value: '' }))
+
+      const note = typeof noteResult === 'object' ? noteResult.value : (noteResult || '')
+      const success = await bookingStore.blockDay(allSlots, note)
       if (success) {
         ElMessage.success('已成功禁用整日預約')
       } else if (bookingStore.error) {
