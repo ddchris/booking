@@ -142,6 +142,63 @@ export const useBookingStore = defineStore('booking', () => {
     }
   }
 
+  // Admin Actions
+  const blockSlot = async (timeSlot: number) => {
+    loading.value = true
+    try {
+      await bookingService.blockSlot(timeSlot)
+      return true
+    } catch (e: any) {
+      error.value = e.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const unblockSlot = async (timeSlot: number) => {
+    loading.value = true
+    try {
+      await bookingService.unblockSlot(timeSlot)
+      return true
+    } catch (e: any) {
+      error.value = e.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const blockDay = async (timeSlots: number[]) => {
+    loading.value = true
+    try {
+      const hasBookings = await bookingService.hasBookingsInSlots(timeSlots)
+      if (hasBookings) {
+        throw new Error('請先刪除該欄所有預約再進行操作')
+      }
+      await bookingService.blockDay(timeSlots)
+      return true
+    } catch (e: any) {
+      error.value = e.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const unblockDay = async (timeSlots: number[]) => {
+    loading.value = true
+    try {
+      await bookingService.unblockDay(timeSlots)
+      return true
+    } catch (e: any) {
+      error.value = e.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   const clearError = () => {
     error.value = null
   }
@@ -151,6 +208,10 @@ export const useBookingStore = defineStore('booking', () => {
     error,
     createBooking,
     cancelBooking,
+    blockSlot,
+    unblockSlot,
+    blockDay,
+    unblockDay,
     clearError
   }
 })

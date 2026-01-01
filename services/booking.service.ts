@@ -1,6 +1,6 @@
 import {
   getFirestore, doc, runTransaction,
-  Timestamp, collection, query, where, getDocs
+  Timestamp, collection, query, where, getDocs, writeBatch, deleteDoc, setDoc
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
 
@@ -216,6 +216,71 @@ export class BookingService {
     } catch (e) {
       throw e
     }
+  }
+
+  /**
+   * 管理員禁用特定時段
+   */
+  async blockSlot(timeSlot: number) {
+    const slotId = String(timeSlot)
+    const publicSlotRef = doc(this.db, 'public_slots', slotId)
+    await setDoc(publicSlotRef, {
+      lockedAt: Timestamp.now(),
+      isBlocked: true // Optional flag to distinguish from regular bookings if needed
+    })
+  }
+
+  /**
+   * 管理員解除禁用特定時段
+   */
+  async unblockSlot(timeSlot: number) {
+    const slotId = String(timeSlot)
+    const publicSlotRef = doc(this.db, 'public_slots', slotId)
+    await deleteDoc(publicSlotRef)
+  }
+
+  /**
+   * 檢查某些時段是否已有預約
+   */
+  async hasBookingsInSlots(timeSlots: number[]): Promise<boolean> {
+    if (timeSlots.length === 0) return false
+    const q = query(
+      collection(this.db, 'bookings'),
+      where('timeSlot', 'in', timeSlots),
+      where('status', '==', 'booked')
+    )
+    const snap = await getDocs(q)
+    return !snap.empty
+  }
+
+  /**
+   * 管理員禁用整天
+   */
+  async blockDay(timeSlots: number[]) {
+    const batch = writeBatch(this.db)
+    const now = Timestamp.now()
+
+    timeSlots.forEach(ts => {
+      const ref = doc(this.db, 'public_slots', String(ts))
+      batch.set(ref, { lockedAt: now, isBlocked: true })
+    })
+
+    await batch.commit()
+  }
+
+  /**
+   * 管理員解除整天禁用
+   * 註：這只會刪除 public_slots，如果其中有真實預約，也會被解除（通常 UI 會先擋掉）
+   */
+  async unblockDay(timeSlots: number[]) {
+    const batch = writeBatch(this.db)
+
+    timeSlots.forEach(ts => {
+      const ref = doc(this.db, 'public_slots', String(ts))
+      batch.delete(ref)
+    })
+
+    await batch.commit()
   }
 }
 

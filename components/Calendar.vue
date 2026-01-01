@@ -83,7 +83,11 @@
               <!-- Column Header -->
               <div 
                 class="flex-none text-center pb-0.5 flex flex-col items-center transition-colors rounded-t-lg"
-                :class="day.isToday ? 'opacity-100' : 'opacity-60 hover:opacity-100'"
+                :class="[
+                  day.isToday ? 'opacity-100' : 'opacity-60 hover:opacity-100',
+                  auth.isAdmin ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800' : ''
+                ]"
+                @click="auth.isAdmin && handleDayHeaderClick(day)"
               >
                 <!-- WeekDay -->
                 <span 
@@ -115,18 +119,22 @@
                   class="w-full relative flex-1 min-h-[48px] md:min-h-0 lg:min-h-0 lg:h-10 py-1 md:py-3 lg:py-0 px-0.5 md:px-1 rounded-md border text-center transition-all duration-200 group/btn shrink-0 flex flex-col items-center justify-center overflow-hidden shadow-sm"
                   :class="getSlotClass(slot)"
                 >
-                  <!-- Formatted Time -->
-                  <div class="leading-none flex flex-col lg:flex-row items-center lg:items-center justify-center w-full gap-0.5 md:gap-0.5 lg:gap-1">
-                     <template v-if="slot.status === 'booked'">
-                       <span class="text-sm md:text-xl font-mono font-bold tracking-wider">已被預約</span>
-                     </template>
-                     <template v-else-if="slot.isNotYetOpen">
-                        <span class="text-sm md:text-xl font-mono font-bold tracking-wider">未開放</span>
-                     </template>
-                     <template v-else>
-                       <span class="text-sm md:text-xl font-mono font-bold tracking-wider">{{ slot.timeOnly }}</span>
-                     </template>
-                  </div>
+                   <!-- Formatted Time -->
+                   <div class="leading-none flex flex-col lg:flex-row items-center lg:items-center justify-center w-full gap-0.5 md:gap-0.5 lg:gap-1">
+                      <template v-if="slot.isBlockedByAdmin">
+                        <div class="i-carbon-ban text-gray-400 text-lg mr-1" v-if="auth.isAdmin"></div>
+                        <span class="text-sm md:text-xl font-mono font-bold tracking-wider">禁止預約</span>
+                      </template>
+                      <template v-else-if="slot.status === 'booked'">
+                        <span class="text-sm md:text-xl font-mono font-bold tracking-wider">已被預約</span>
+                      </template>
+                      <template v-else-if="slot.isNotYetOpen">
+                         <span class="text-sm md:text-xl font-mono font-bold tracking-wider">未開放</span>
+                      </template>
+                      <template v-else>
+                        <span class="text-sm md:text-xl font-mono font-bold tracking-wider">{{ slot.timeOnly }}</span>
+                      </template>
+                   </div>
                 </button>
               </div>
             </div>
@@ -139,6 +147,7 @@
     <div class="py-1 border-t border-gray-200 dark:border-gray-800 flex justify-center gap-6 text-[10px] text-gray-500 uppercase tracking-widest flex-none">
        <span class="flex items-center"><span class="w-3 h-3 inline-block bg-white dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 mr-2 rounded-full"></span>可預約</span>
        <span class="flex items-center"><span class="w-3 h-3 inline-block bg-amber-600 mr-2 rounded-full"></span>您的預約</span>
+       <span v-if="auth.isAdmin" class="flex items-center"><span class="w-3 h-3 inline-block bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-400 mr-2 rounded-full"></span>禁止預約</span>
     </div>
 
     <!-- Booking Dialog -->
@@ -164,9 +173,10 @@ const auth = useAuthStore()
 
 // --- State ---
 const anchorDate = ref(dayjs()) 
-const occupiedSlots = ref<Set<string>>(new Set())
+const occupiedSlotsMap = ref<Map<string, { lockedAt: any, isBlocked?: boolean }>>(new Map())
 const showDialog = ref(false)
 const selectedSlot = ref<number | null>(null)
+const bookingStore = useBookingStore()
 
 // --- Computed ---
 const myBookingSlot = computed(() => auth.userProfile?.activeBookingTimeSlot)
@@ -194,6 +204,7 @@ interface ViewSlot {
   isMyBooking: boolean
   isDisabled: boolean
   isNotYetOpen: boolean
+  isBlockedByAdmin: boolean
   status: 'available' | 'mine' | 'past' | 'booked'
 }
 
@@ -228,7 +239,9 @@ const daysInView = computed<ViewDay[]>(() => {
     const slots: ViewSlot[] = rawSlots.map(ts => {
       // Slot Logic
       const isMy = !!myBookingSlot.value && (Number(myBookingSlot.value) === Number(ts))
-      const isLocked = occupiedSlots.value.has(String(ts))
+      const slotData = occupiedSlotsMap.value.get(String(ts))
+      const isLocked = !!slotData
+      const isBlocked = !!slotData?.isBlocked
       
       const slotTime = dayjs(ts)
       const isUnavailable = slotTime.isBefore(minBookDate) || slotTime.isAfter(maxBookDate)
@@ -256,6 +269,7 @@ const daysInView = computed<ViewDay[]>(() => {
         isMyBooking: isMy,
         isDisabled: status !== 'available' && status !== 'mine',
         isNotYetOpen,
+        isBlockedByAdmin: isBlocked, // Added property
         status
       }
     })
@@ -287,9 +301,9 @@ watch(startOfWeek, (start) => {
   )
   
   unsub = onSnapshot(q, (snap) => {
-    const set = new Set<string>()
-    snap.forEach(doc => set.add(doc.id))
-    occupiedSlots.value = set
+    const map = new Map<string, any>()
+    snap.forEach(doc => map.set(doc.id, doc.data()))
+    occupiedSlotsMap.value = map
   })
 }, { immediate: true })
 
@@ -307,11 +321,11 @@ const prevWeek = () => {
 }
 const goToToday = () => anchorDate.value = dayjs()
 
-const handleSlotClick = async (slot: ViewSlot) => {
-  // Admin Override: Allow clicking 'booked' slots
-  if (auth.isAdmin && slot.status === 'booked') {
-     handleAdminSlotClick(slot)
-     return
+const handleSlotClick = async (slot: any) => {
+  // Admin Override
+  if (auth.isAdmin) {
+    handleAdminSlotClick(slot)
+    return
   }
 
   if (slot.isMyBooking || slot.isDisabled) return
@@ -339,45 +353,122 @@ const handleSlotClick = async (slot: ViewSlot) => {
   showDialog.value = true
 }
 
-const handleAdminSlotClick = async (slot: ViewSlot) => {
+const handleAdminSlotClick = async (slot: any) => {
   try {
-    const q = query(collection($db, 'bookings'), where('timeSlot', '==', slot.ts), limit(1))
+    // 1. Check if there's a booking
+    const q = query(collection($db, 'bookings'), where('timeSlot', '==', slot.ts), where('status', '==', 'booked'), limit(1))
     const snap = await getDocs(q)
-    if (snap.empty) {
-      ElMessage.warning('找不到該時段的預約資料 (可能數據不一致)')
+    
+    if (!snap.empty) {
+      // It's a real booking
+      const booking = { id: snap.docs[0].id, ...snap.docs[0].data() } as any
+      const user = booking.userSnapshot || {}
+
+      await ElMessageBox.confirm(
+        `
+          <div class="text-left font-sans">
+            <p class="mb-1"><strong>預約人:</strong> ${user.displayName || '未知'}</p>
+            <p class="mb-1"><strong>電話:</strong> ${user.phone || '--'}</p>
+            <p class="mb-1"><strong>LINE:</strong> ${user.lineId || '--'}</p>
+            <div class="h-px bg-gray-700 my-3"></div>
+            <p class="text-red-400 text-sm font-bold">確定要取消此預約嗎？</p>
+          </div>
+        `,
+        '管理預約',
+        {
+          confirmButtonText: '確認取消',
+          confirmButtonClass: 'el-button--danger',
+          cancelButtonText: '返回',
+          dangerouslyUseHTMLString: true,
+          customClass: 'dark-dialog',
+        }
+      )
+
+      await bookingService.adminDeleteBooking(booking.id, booking.timeSlot, booking.userId)
+      ElMessage.success('已取消預約')
       return
     }
-    const booking = { id: snap.docs[0].id, ...snap.docs[0].data() } as any
-    const user = booking.userSnapshot || {}
 
-    await ElMessageBox.confirm(
-      `
-        <div class="text-left">
-          <p><strong>預約人:</strong> ${user.displayName || '未知'}</p>
-          <p><strong>電話:</strong> ${user.phone || '--'}</p>
-          <p><strong>LINE:</strong> ${user.lineId || '--'}</p>
-          <p class="mt-2 text-sm text-gray-400">確定要強制刪除此預約嗎？</p>
-        </div>
-      `,
-      '預約詳情',
-      {
-        confirmButtonText: '刪除預約',
-        confirmButtonClass: 'el-button--danger',
-        cancelButtonText: '關閉',
-        dangerouslyUseHTMLString: true,
+    // 2. No booking found, it's either "Blocked" or "Available"
+    const isBlocked = slot.isBlockedByAdmin || occupiedSlotsMap.value.has(String(slot.ts))
+    
+    if (isBlocked) {
+      // It's manually blocked
+      await ElMessageBox.confirm('此時段已被您設定為禁止預約，確定要解除嗎？', '管理時段', {
+        confirmButtonText: '解除預約禁止',
+        cancelButtonText: '返回',
         customClass: 'dark-dialog',
-        type: 'info'
-      }
-    )
+      })
+      await bookingStore.unblockSlot(slot.ts)
+      ElMessage.success('已解除禁用')
+    } else {
+      // It's available - let admin choose to block or book
+      const result = await ElMessageBox.confirm(
+        '您想要對此空白時段執行什麼操作？',
+        '管理時段',
+        {
+          distinguishCancelAndClose: true,
+          confirmButtonText: '設定為禁止預約',
+          cancelButtonText: '管理員代客預約',
+          confirmButtonClass: 'el-button--warning',
+          cancelButtonClass: 'el-button--primary',
+          customClass: 'dark-dialog',
+          type: 'info'
+        }
+      ).catch(action => action)
 
-    // Delete
-    await bookingService.adminDeleteBooking(booking.id, booking.timeSlot, booking.userId)
-    ElMessage.success('已刪除該預約')
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      console.error(e)
-      ElMessage.error('操作失敗: ' + e.message)
+      if (result === 'confirm') {
+        await bookingStore.blockSlot(slot.ts)
+        ElMessage.success('已設定為禁止預約')
+      } else if (result === 'cancel') {
+        // Trigger normal booking dialog
+        selectedSlot.value = slot.ts
+        showDialog.value = true
+      }
     }
+  } catch (e: any) {
+    if (e !== 'cancel' && e !== 'close') {
+      console.error(e)
+      ElMessage.error(e.message || '操作失敗')
+    }
+  }
+}
+
+const handleDayHeaderClick = async (day: ViewDay) => {
+  const allSlots = day.slots.map(s => s.ts)
+  const isCurrentlyBlocked = day.slots.every(s => s.isBlockedByAdmin)
+
+  try {
+    if (isCurrentlyBlocked) {
+      await ElMessageBox.confirm(`您確定要解除 ${day.dateStr} (${day.weekName}) 的整日禁止預約嗎？`, '整日解除禁用', {
+        confirmButtonText: '確定解除',
+        cancelButtonText: '返回',
+        customClass: 'dark-dialog',
+      })
+      await bookingStore.unblockDay(allSlots)
+      ElMessage.success('已解除整日禁用')
+    } else {
+      await ElMessageBox.confirm(
+        `將 ${day.dateStr} (${day.weekName}) 設定為整日禁止預約嗎？<br/><small class="text-gray-400">系統將檢查是否已有預約</small>`, 
+        '整日禁止預約', 
+        {
+          confirmButtonText: '確認禁用',
+          confirmButtonClass: 'el-button--warning',
+          cancelButtonText: '取消',
+          dangerouslyUseHTMLString: true,
+          customClass: 'dark-dialog',
+        }
+      )
+      
+      const success = await bookingStore.blockDay(allSlots)
+      if (success) {
+        ElMessage.success('已成功禁用整日預約')
+      } else if (bookingStore.error) {
+        ElMessage.error(bookingStore.error)
+      }
+    }
+  } catch (e) {
+    // User cancelled
   }
 }
 
@@ -401,6 +492,10 @@ const getSlotClass = (slot: ViewSlot) => {
   // Booked (By others)
   if (slot.status === 'booked') {
      if (auth.isAdmin) {
+       // Distinguish between blocked and booked for admin
+       if (slot.isBlockedByAdmin) {
+         return 'bg-gray-100 dark:bg-gray-800 border-dashed border-gray-400 dark:border-gray-500 text-gray-500 cursor-pointer opacity-100 font-medium'
+       }
        return 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-amber-600 dark:text-amber-500 cursor-pointer opacity-100 ring-1 ring-amber-500/30 font-medium'
      }
      return 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-60'
