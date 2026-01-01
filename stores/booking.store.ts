@@ -97,6 +97,7 @@ export const useBookingStore = defineStore('booking', () => {
           activeBookingTimeSlot: null,
           monthlyCancellations: {},
           totalBookings: 0,
+          totalCancellations: 0,
           firstBookingAt: null,
           lastBookingAt: null
         }

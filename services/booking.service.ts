@@ -1,6 +1,6 @@
 import {
   getFirestore, doc, runTransaction,
-  Timestamp, collection, query, where, getDocs, writeBatch, deleteDoc, setDoc
+  Timestamp, collection, query, where, getDocs, writeBatch, deleteDoc, setDoc, increment
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
 
@@ -16,6 +16,7 @@ export interface UserProfile {
   activeBookingTimeSlot: number | null
   monthlyCancellations: Record<string, number> // 'YYYY_MM' -> count
   totalBookings: number
+  totalCancellations: number // Added
   lastBookingAt: Timestamp | null
   firstBookingAt: Timestamp | null
 }
@@ -58,19 +59,19 @@ export class BookingService {
 
     try {
       await runTransaction(this.db, async (transaction) => {
-        // 1. 檢查時段是否已被佔用（資料唯一來源）
+        // 1. 檢查時段是否已被佔用
         const publicSlotDoc = await transaction.get(publicSlotRef)
         if (publicSlotDoc.exists()) {
-          throw new Error('此時段已被預約。')
+          throw new Error('該時段已被預約或禁用。')
         }
 
-        // 2. 檢查使用者狀態（即時讀取）
+        // 2. 檢查使用者狀態 (Reload profile inside transaction to be safe)
         const userDoc = await transaction.get(userRef)
-        if (!userDoc.exists()) {
-          throw new Error('找不到使用者個人資料。')
-        }
         const userData = userDoc.data() as UserProfile
 
+        if (!userData) {
+          throw new Error('找不到使用者資料。')
+        }
         if (userData.isBlocked && userData.role !== 'admin') {
           throw new Error('您已被封鎖，無法進行預約。')
         }
@@ -82,13 +83,12 @@ export class BookingService {
         }
 
         // 3. 準備資料
-
         const now = Timestamp.now()
-        const bookingData: Booking = {
+        const newBooking: Booking = {
           timeSlot,
           status: 'booked',
           userId: user.uid,
-          services: services || [], // Included: Multiple services
+          services,
           userSnapshot: {
             displayName: user.displayName,
             phone: user.phoneNumber,
@@ -99,22 +99,17 @@ export class BookingService {
         }
 
         // 4. 寫入操作
-
-        transaction.set(bookingRef, bookingData)
+        transaction.set(bookingRef, newBooking)
         transaction.set(publicSlotRef, { lockedAt: now })
 
+        // 更新使用者：設置活動預約指針、增加總次數、更新最近預約時間
         transaction.update(userRef, {
           activeBookingTimeSlot: timeSlot,
           totalBookings: (userData.totalBookings || 0) + 1,
           lastBookingAt: now,
-          // Set firstBookingAt if missing
-          ...(userData.firstBookingAt ? {} : { firstBookingAt: now })
-          // Note: We might also want to ensure basic info is synced if changed, 
-          // but for now relying on Auth Store to keep profile updated.
+          firstBookingAt: userData.firstBookingAt || now
         })
       })
-
-      return bookingRef.id
     } catch (e: any) {
       console.error('預約失敗：', e)
       throw e
@@ -122,8 +117,8 @@ export class BookingService {
   }
 
   /**
-   * 取消預約（用戶端操作）
-   * - 強制執行：時間限制 (4小時)、每月限制 (1次)
+   * 客戶自行取消預約
+   * - 規則：4 小時前、每月限 1 次
    */
   async cancelBooking(userId: string, bookingId: string, timeSlot: number) {
     const bookingRef = doc(this.db, 'bookings', bookingId)
@@ -133,13 +128,9 @@ export class BookingService {
     try {
       await runTransaction(this.db, async (transaction) => {
         const bookingDoc = await transaction.get(bookingRef)
-        if (!bookingDoc.exists()) throw new Error('找不到預約記錄。')
-
+        if (!bookingDoc.exists()) throw new Error('找不到該預約。')
         const booking = bookingDoc.data() as Booking
-
-        // 1. 驗證權限與狀態
-        if (booking.userId !== userId) throw new Error('權限不足。')
-        if (booking.status !== 'booked') throw new Error('預約並非作用中狀態。')
+        if (booking.status !== 'booked') throw new Error('預約狀態不正確。')
 
         // 2. 驗證時間限制（伺服器時間）
         // 註：Firestore Timestamp 比較
@@ -177,6 +168,7 @@ export class BookingService {
         // 更新使用者：清除指針、增加取消次數
         transaction.update(userRef, {
           activeBookingTimeSlot: null,
+          totalCancellations: (userData.totalCancellations || 0) + 1,
           [`monthlyCancellations.${currentMonthKey}`]: currentCount + 1
         })
       })
@@ -210,14 +202,30 @@ export class BookingService {
         // 確保公用時段被移除
         transaction.delete(publicSlotRef)
 
-        // 清除使用者指針，但 不要 增加取消計數
+        // 確保客人的指針也被清除
         transaction.update(userRef, {
-          activeBookingTimeSlot: null
+          activeBookingTimeSlot: null,
+          totalCancellations: increment(1)
         })
       })
     } catch (e) {
+      console.error('管理員刪除失敗：', e)
       throw e
     }
+  }
+
+  /**
+   * 檢查時段是否已有預約
+   */
+  async hasBookingsInSlots(timeSlots: number[]): Promise<boolean> {
+    if (timeSlots.length === 0) return false
+    const q = query(
+      collection(this.db, 'bookings'),
+      where('timeSlot', 'in', timeSlots),
+      where('status', '==', 'booked')
+    )
+    const snap = await getDocs(q)
+    return !snap.empty
   }
 
   /**
@@ -240,20 +248,6 @@ export class BookingService {
     const slotId = String(timeSlot)
     const publicSlotRef = doc(this.db, 'public_slots', slotId)
     await deleteDoc(publicSlotRef)
-  }
-
-  /**
-   * 檢查某些時段是否已有預約
-   */
-  async hasBookingsInSlots(timeSlots: number[]): Promise<boolean> {
-    if (timeSlots.length === 0) return false
-    const q = query(
-      collection(this.db, 'bookings'),
-      where('timeSlot', 'in', timeSlots),
-      where('status', '==', 'booked')
-    )
-    const snap = await getDocs(q)
-    return !snap.empty
   }
 
   /**
