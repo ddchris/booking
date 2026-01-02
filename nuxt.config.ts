@@ -18,7 +18,8 @@ export default defineNuxtConfig({
       link: [
         { rel: 'icon', type: 'image/png', href: '/favicon.png' }
       ]
-    }
+    },
+    pageTransition: { name: 'page', mode: 'out-in' },
   },
 
   modules: [
